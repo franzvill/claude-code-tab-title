@@ -4,76 +4,81 @@ VS Code terminal tab titles that show what each Claude Code session is working o
 
 When you have multiple `claude` sessions running in different VS Code terminal tabs, the tab titles all collapse to the binary name (`2.1.119`) or to a static shell label, so you can't tell at a glance which session is doing what. This wires up two hooks that render each tab's title as `<marker> <topic>`:
 
-- `*` when the user has just submitted (Claude is working) → flips at `UserPromptSubmit`
+- `*` when you've just submitted (Claude is working) → flips at `UserPromptSubmit`
 - `·` when Claude has finished its turn (idle) → flips at `Stop`
 
 The topic is set once, from the first prompt of the session, and stays sticky until the session ends.
 
 ## Install
 
-### 1. Drop the hook script
+### Option A — via Claude Code plugin (recommended)
 
-```bash
-mkdir -p ~/.claude/hooks
-curl -fsSL https://raw.githubusercontent.com/franzvill/claude-code-tab-title/main/tab-state.py \
-  -o ~/.claude/hooks/tab-state.py
-chmod +x ~/.claude/hooks/tab-state.py
+Two slash commands in any claude session:
+
+```
+/plugin marketplace add franzvill/claude-code-tab-title
+/plugin install tab-title@claude-code-tab-title
 ```
 
-### 2. Wire it up in `~/.claude/settings.json`
+That installs `tab-state.py` and registers the three hooks (`UserPromptSubmit`, `Stop`, `SessionStart`). You then need to do **two small manual steps** that plugins can't do on your behalf:
 
-You need an env var (so Claude Code stops writing competing titles) plus three hooks. If you don't have `~/.claude/settings.json` yet, this is the whole file:
+1. **Add the env var** to `~/.claude/settings.json` so Claude Code stops writing competing OSC titles:
 
-```json
-{
-  "env": {
-    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/tab-state.py working" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/tab-state.py idle" }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/tab-state.py idle" }
-        ]
-      }
-    ]
-  }
-}
-```
+   ```json
+   {
+     "env": {
+       "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+     }
+   }
+   ```
 
-If you already have `settings.json`, **merge** these in — don't replace the whole file. Add `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` to the existing `env` object. For the hooks: if `UserPromptSubmit`, `Stop`, or `SessionStart` already exist (e.g. for `ccnotify` or other sound/notifier hooks), append a new `{ "hooks": [...] }` block beside the existing ones — both will fire.
+   (Merge into the existing `env` object if you already have one.)
 
-### 3. Tell VS Code to honor OSC title sequences
+2. **Tell VS Code to display OSC titles.** In `~/Library/Application Support/Code/User/settings.json` (Cmd+Shift+P → "Preferences: Open User Settings (JSON)"):
 
-VS Code's terminal defaults `terminal.integrated.tabs.title` to `${process}`, which shows the foreground process's filename — and since Claude Code's binary is named `2.1.119` (the version), every claude tab ends up titled `2.1.119` and your OSC writes are ignored.
+   ```json
+   "terminal.integrated.tabs.title": "${sequence}"
+   ```
 
-Open VS Code's user `settings.json` (`Cmd+Shift+P` → "Preferences: Open User Settings (JSON)") and add:
+Restart any running `claude` session for the env var to take effect.
 
-```json
-"terminal.integrated.tabs.title": "${sequence}"
-```
+To update later: `/plugin marketplace update`. To uninstall: `/plugin uninstall tab-title@claude-code-tab-title`.
 
-VS Code will then display whatever the terminal last set via OSC, which is what the hook writes.
+### Option B — manual install
 
-### 4. Restart and test
+If you'd rather not use the plugin system:
 
-Open a fresh VS Code terminal tab. Run `claude`. Submit any prompt longer than a few words — the tab will become `* <first line of your prompt>`. When Claude finishes the turn the prefix flips to `·`. Subsequent prompts don't change the topic; it sticks to whatever was set on the first prompt.
+1. Drop the script:
 
-Existing claude sessions don't pick up the new hooks (or the env var) until restart.
+   ```bash
+   mkdir -p ~/.claude/hooks
+   curl -fsSL https://raw.githubusercontent.com/franzvill/claude-code-tab-title/main/tab-state.py \
+     -o ~/.claude/hooks/tab-state.py
+   chmod +x ~/.claude/hooks/tab-state.py
+   ```
+
+2. Add to `~/.claude/settings.json` (merge into existing `env` and `hooks` objects rather than replacing):
+
+   ```json
+   {
+     "env": {
+       "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+     },
+     "hooks": {
+       "UserPromptSubmit": [
+         { "hooks": [{ "type": "command", "command": "~/.claude/hooks/tab-state.py working" }] }
+       ],
+       "Stop": [
+         { "hooks": [{ "type": "command", "command": "~/.claude/hooks/tab-state.py idle" }] }
+       ],
+       "SessionStart": [
+         { "hooks": [{ "type": "command", "command": "~/.claude/hooks/tab-state.py idle" }] }
+       ]
+     }
+   }
+   ```
+
+3. Add `"terminal.integrated.tabs.title": "${sequence}"` to VS Code's user `settings.json` (same as Option A step 2).
 
 ## Optional: meaningful topic via Claude itself
 
@@ -85,7 +90,7 @@ The script accepts an explicit override:
 ~/.claude/hooks/tab-state.py --topic "Auth refactor"
 ```
 
-You can have Claude itself synthesize a 2–4 word topic and call this on the first response of every new session. To make it automatic, drop something like this into your project's `CLAUDE.md` or a personal user instruction:
+You can have Claude itself synthesize a 2–4 word topic and call this on the first response of every new session. To make it automatic, add an instruction like this to your project's `CLAUDE.md` or a personal user-level instruction:
 
 > On the first response in any new session, run `~/.claude/hooks/tab-state.py --topic "<2–4 word topic>"` to set a meaningful tab title summarizing the user's first request.
 
@@ -113,11 +118,12 @@ In `--topic` mode there's no stdin payload providing `session_id`, so the script
 - **VS Code integrated terminal** is the assumed display. iTerm2 / Terminal.app honor OSC titles too but the visual is just whatever the OSC wrote — there's no separate VS Code-style busy indicator.
 - **The marker is static**, not animated. We emit a literal `*` or `·` character. Claude Code's own native indicator (which may animate) is disabled by `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` because otherwise it stomps on our title.
 - **Manual tab rename will be overwritten.** Any OSC write replaces the tab's manual rename. You can rename, but the next `UserPromptSubmit` or `Stop` will overwrite. Disable the hook entries if you'd rather rename manually.
-- **Existing hooks aren't clobbered** as long as you append rather than replace during step 2.
+- **Existing hooks aren't clobbered** as long as you append rather than replace the JSON (manual install) or use the plugin (which adds hooks alongside any user-defined ones).
+- **Plugins can't set env vars on your behalf** — `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` and the VS Code setting both have to be added by hand even via Option A. There are only two manual lines either way.
 
 ## Customize
 
-Open `~/.claude/hooks/tab-state.py` and edit:
+Open `~/.claude/hooks/tab-state.py` (Option B) or the plugin's installed copy at `~/.claude/plugins/...` (Option A) and edit:
 
 | Constant | Default | Meaning |
 |---|---|---|
@@ -128,11 +134,9 @@ Open `~/.claude/hooks/tab-state.py` and edit:
 
 ## Uninstall
 
-```bash
-rm ~/.claude/hooks/tab-state.py
-```
+**Option A**: `/plugin uninstall tab-title@claude-code-tab-title`. Then remove `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` from `~/.claude/settings.json` and `terminal.integrated.tabs.title` from VS Code's user `settings.json`.
 
-Then in `~/.claude/settings.json` remove the three hook entries you added (`UserPromptSubmit`, `Stop`, `SessionStart`) and the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` line. In VS Code's user `settings.json` remove `terminal.integrated.tabs.title`.
+**Option B**: `rm ~/.claude/hooks/tab-state.py`, then remove the three hook entries from `~/.claude/settings.json`, the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env var, and the VS Code line.
 
 ## License
 

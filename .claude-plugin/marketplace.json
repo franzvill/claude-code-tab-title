@@ -1,0 +1,16 @@
+{
+  "name": "claude-code-tab-title",
+  "owner": {
+    "name": "Francesco Villano"
+  },
+  "metadata": {
+    "description": "Single-plugin marketplace for VS Code terminal tab titles in Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "tab-title",
+      "source": ".",
+      "description": "Tab title hook: '<marker> <topic>' from first prompt, * working / · idle."
+    }
+  ]
+}

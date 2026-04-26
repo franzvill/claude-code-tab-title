@@ -1,0 +1,13 @@
+{
+  "name": "tab-title",
+  "version": "0.2.0",
+  "description": "VS Code terminal tab titles for Claude Code: '<marker> <topic>' format with first-prompt sticky topic and busy/idle markers.",
+  "author": {
+    "name": "Francesco Villano",
+    "url": "https://github.com/franzvill"
+  },
+  "homepage": "https://github.com/franzvill/claude-code-tab-title",
+  "repository": "https://github.com/franzvill/claude-code-tab-title",
+  "license": "MIT",
+  "keywords": ["vscode", "terminal", "tab-title", "hooks", "ergonomics"]
+}
