@@ -52,7 +52,7 @@ If you'd rather not use the plugin system:
 
 ```bash
 mkdir -p ~/.claude/hooks
-curl -fsSL https://raw.githubusercontent.com/franzvill/claude-code-tab-title/main/tab-state.py \
+curl -fsSL https://raw.githubusercontent.com/franzvill/claude-code-tab-title/main/plugins/tab-title/tab-state.py \
   -o ~/.claude/hooks/tab-state.py
 chmod +x ~/.claude/hooks/tab-state.py
 ```

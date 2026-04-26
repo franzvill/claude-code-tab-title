@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "tab-title",
-      "source": ".",
+      "source": "./plugins/tab-title",
       "description": "Tab title hook: '<marker> <topic>' from first prompt, * working / · idle."
     }
   ]
