@@ -9,6 +9,30 @@ When you have multiple `claude` sessions running in different VS Code terminal t
 
 The topic is set once, from the first prompt of the session, and stays sticky until the session ends.
 
+## What it looks like
+
+**One session, over a single turn:**
+
+```
+· fide-exam               ← SessionStart writes a project-name fallback
+* Refactor auth flow      ← after your first prompt: topic seeded, marker = busy
+· Refactor auth flow      ← Claude finishes the turn → marker flips to idle
+* Refactor auth flow      ← you reply "ok do that part" → marker flips back to busy
+                            (topic stays — sticky from first prompt)
+· Refactor auth flow      ← Claude finishes → idle again
+```
+
+**Four parallel sessions in VS Code's integrated terminal panel** (each line is a tab):
+
+```
+* Auth refactor           ← Claude working on this one right now
+· Stripe webhook          ← idle, waiting for you to reply
+* Migration runner        ← Claude working
+· Tab title hook          ← idle
+```
+
+If you've added the `--topic` instruction (see below), the topics get synthesized down to 2–4 word summaries instead of the literal first line of your prompt.
+
 ## Install
 
 ### Option A — via Claude Code plugin (recommended)
