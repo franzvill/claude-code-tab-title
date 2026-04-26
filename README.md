@@ -7,7 +7,7 @@ When you have multiple `claude` sessions running in different VS Code terminal t
 ## What you get
 
 - Tab title = the topic of your last substantive prompt.
-- **Sticky** across short follow-ups: replies like `ok`, `do it`, `fix it`, `now also...` (under ~30 chars and starting with an ack) keep the previous topic in place. Real new prompts replace it.
+- **Sticky** across short follow-ups: any reply under `MIN_TOPIC_LEN` chars (default 10) keeps the previous topic in place — `ok`, `do it`, `fix it`, `next` all leave the topic alone. Anything longer replaces it. Length-only check, no English-specific word list.
 - **No emoji prefix** — VS Code's native `·`/`✱` tab indicator handles the busy/idle visual.
 - **No flicker on tool calls.** `PreToolUse` is intentionally not hooked.
 - **No LLM call.** Pure heuristic from your prompt text. Zero token cost.
@@ -86,12 +86,9 @@ Existing `claude` sessions don't pick up new hooks until restart.
 
 **On `SessionStart`:** writes the cwd basename (e.g. `fide-exam`) as a fallback title, so the tab shows something predictable before the first message.
 
-**On `UserPromptSubmit`:** reads the JSON payload from stdin, slices `prompt` to the first 500 bytes (so a 50 KB paste-in doesn't cost anything), takes the first non-empty line. If `topic` is empty (first message ever) or the prompt isn't a continuation, replaces topic with that line. Otherwise keeps the existing topic. Composes the title (truncated to 26 chars, control chars stripped) and writes OSC.
+**On `UserPromptSubmit`:** reads the JSON payload from stdin, slices `prompt` to the first 500 bytes (so a 50 KB paste-in doesn't cost anything), takes the first non-empty line. If `topic` is empty (first message ever) or the prompt's stripped length is at least `MIN_TOPIC_LEN`, replaces topic with that line. Otherwise keeps the existing topic. Composes the title (truncated to 26 chars, control chars stripped) and writes OSC.
 
-**Continuation detection:**
-- First word in `{ok, okay, k, kk, yep, yes, yeah, yup, no, nope, thanks, thx, thank, great, sure, fine, perfect, cool, right, got}` AND length < 30 → continuation.
-- Length < 10 unconditionally → continuation.
-- Otherwise → substantive, replaces topic.
+**Continuation detection:** length-only. A prompt under `MIN_TOPIC_LEN` chars (default 10) is a continuation and leaves the topic alone; everything else replaces it. No hardcoded ack words — works in any language and stays maintainable.
 
 **Why we walk the process tree to write OSC:** Claude Code spawns hooks without a connected `/dev/tty` (presumably so hook stdout/stderr doesn't leak into the conversation). Writing to `/dev/tty` from the hook silently fails. The script falls back to `ps -o tty=,ppid= -p $PPID` to find the parent `claude`'s real pty (e.g. `/dev/ttys020`) and writes there directly, walking up to 10 hops if the parent itself has no tty.
 
@@ -102,7 +99,7 @@ Existing `claude` sessions don't pick up new hooks until restart.
 - **macOS only** as written. The `find_terminal_device()` function shells out to `ps`; Linux'd want `/proc/<pid>/stat`.
 - **VS Code integrated terminal** is the assumed display. iTerm2 / Terminal.app honor OSC titles too but the busy/idle indicator (`·`/`✱`) is VS Code-specific.
 - **No semantic compression.** The title is the literal first line of your last substantive prompt, truncated. *"Help me refactor the entire authentication flow including login"* shows as `Help me refactor the ent…`. If you want 2–4 word topics, you need an LLM in the loop — see [Future work](#future-work).
-- **Continuation detection has false positives.** `Now also refactor user.ts` is treated as substantive (good) because `now` isn't in the ack set, but `Fix it now` (10 chars, no ack prefix) is too — yet `Fix it` (6 chars) is treated as a continuation. The thresholds are tunable in the script.
+- **Length-based continuation detection is imperfect.** A medium-length follow-up like `ok do the remaining stuff now` (29 chars) overwrites the topic, even though it's clearly a continuation in context. The fix would be an LLM-derived topic (see [Future work](#future-work)); the length-only check is the simplest thing that doesn't require a hardcoded English ack list.
 - **Existing hooks aren't clobbered.** If you have `ccnotify` or similar already on `UserPromptSubmit`/`SessionStart`, our hook runs alongside, not in place of it — but only because you append rather than replace during step 2.
 
 ## Customize
@@ -113,9 +110,7 @@ Open `~/.claude/hooks/tab-state.py` and edit:
 |---|---|---|
 | `TITLE_MAX` | 26 | max display length before truncation with `…` |
 | `PROMPT_SLICE` | 500 | bytes of prompt body the script will scan |
-| `SHORT_PROMPT_LEN` | 10 | length below which any prompt is a continuation |
-| `ACK_CONT_LEN` | 30 | length below which an ack-prefixed prompt is a continuation |
-| `ACKS` | `{ok, okay, ...}` | first words that mark continuations |
+| `MIN_TOPIC_LEN` | 10 | length below which a prompt is a continuation (does not overwrite the topic) |
 
 ## Future work
 

@@ -3,8 +3,9 @@
 
 Title = the topic the user is discussing, derived from their own messages
 only (Claude's responses are ignored). The topic is sticky across short
-ack/continuation prompts ("ok", "do it", "fix it") so it doesn't get
-clobbered by follow-ups; substantive prompts replace it.
+prompts ("ok", "do it", "fix it") so a quick follow-up doesn't clobber it;
+prompts at or above MIN_TOPIC_LEN replace it. Length-only — no English-
+specific ack/continuation word list.
 
 Updates only on UserPromptSubmit. SessionStart writes a project-name
 fallback so the tab shows something predictable before the first message.
@@ -31,13 +32,9 @@ from pathlib import Path
 
 TITLE_MAX = 26
 PROMPT_SLICE = 500
-SHORT_PROMPT_LEN = 10
-ACK_CONT_LEN = 30
-ACKS = {
-    "ok", "okay", "k", "kk", "yep", "yes", "yeah", "yup", "no", "nope",
-    "thanks", "thx", "thank", "great", "sure", "fine", "perfect", "cool",
-    "right", "got",
-}
+MIN_TOPIC_LEN = 10  # prompts shorter than this are treated as continuations
+                    # and don't overwrite the topic. Length-only — no
+                    # English-specific ack/continuation word list.
 
 
 def state_path(session_id: str) -> Path:
@@ -81,15 +78,7 @@ def first_line(text: str) -> str:
 
 
 def is_continuation(prompt: str) -> bool:
-    s = prompt.strip()
-    if not s:
-        return True
-    if len(s) < SHORT_PROMPT_LEN:
-        return True
-    m = re.match(r"^([A-Za-z]+)", s)
-    if m and m.group(1).lower() in ACKS and len(s) < ACK_CONT_LEN:
-        return True
-    return False
+    return len(prompt.strip()) < MIN_TOPIC_LEN
 
 
 def fallback(payload: dict) -> str:
