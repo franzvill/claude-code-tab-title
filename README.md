@@ -1,8 +1,8 @@
 # claude-code-tab-title
 
-VS Code terminal tab titles that show what each Claude Code session is working on, with a busy/idle marker.
+Terminal tab/window titles that show what each Claude Code session is working on, with a busy/idle marker. Works in VS Code's integrated terminal, iTerm2, Terminal.app, and any other terminal that honors standard OSC title sequences.
 
-When you have multiple `claude` sessions running in different VS Code terminal tabs, the tab titles all collapse to the binary name (`2.1.119`) or to a static shell label, so you can't tell at a glance which session is doing what. This wires up two hooks that render each tab's title as `<marker> <topic>`:
+When you have multiple `claude` sessions running in different terminal tabs/windows, the titles all collapse to the binary name (`2.1.119`) or to a static shell label, so you can't tell at a glance which session is doing what. This wires up two hooks that render each tab/window's title as `<marker> <topic>`:
 
 - `*` when you've just submitted (Claude is working) → flips at `UserPromptSubmit`
 - `·` when Claude has finished its turn (idle) → flips at `Stop`
@@ -22,7 +22,7 @@ The topic is set once, from the first prompt of the session, and stays sticky un
 · Refactor auth flow      ← Claude finishes → idle again
 ```
 
-**Four parallel sessions in VS Code's integrated terminal panel** (each line is a tab):
+**Four parallel sessions** (each line is a tab/window):
 
 ```
 * Auth refactor           ← Claude working on this one right now
@@ -92,7 +92,7 @@ Restart any running `claude` sessions for the new hooks to load.
 ## Caveats
 
 - **macOS only** as written. The tty lookup shells out to `ps`; Linux would need `/proc/<pid>/stat` (field 7 = controlling-tty device number).
-- **VS Code integrated terminal** is the assumed display. iTerm2 / Terminal.app honor OSC titles too but the visual is just whatever the OSC wrote.
+- **Tested in** VS Code's integrated terminal, iTerm2, and Terminal.app. Any terminal honoring standard OSC `\033]0;...\007` title sequences should work the same way.
 - **Manual tab rename will be overwritten** by the next `UserPromptSubmit` or `Stop`. Disable the hook entries if you'd rather rename manually.
 - **Existing hooks aren't clobbered** as long as you append rather than replace the JSON (manual install) or use the plugin (which adds hooks alongside any user-defined ones).
 
