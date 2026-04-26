@@ -14,7 +14,7 @@ The topic is set once, from the first prompt of the session, and stays sticky un
 **One session, over a single turn:**
 
 ```
-· fide-exam               ← SessionStart writes a project-name fallback
+· your-project            ← SessionStart writes a project-name fallback
 * Refactor auth flow      ← after your first prompt: topic seeded, marker = busy
 · Refactor auth flow      ← Claude finishes the turn → marker flips to idle
 * Refactor auth flow      ← you reply "ok do that part" → marker flips back to busy
@@ -95,24 +95,6 @@ Restart any running `claude` sessions for the new hooks to load.
 - **VS Code integrated terminal** is the assumed display. iTerm2 / Terminal.app honor OSC titles too but the visual is just whatever the OSC wrote.
 - **Manual tab rename will be overwritten** by the next `UserPromptSubmit` or `Stop`. Disable the hook entries if you'd rather rename manually.
 - **Existing hooks aren't clobbered** as long as you append rather than replace the JSON (manual install) or use the plugin (which adds hooks alongside any user-defined ones).
-
-## Troubleshooting
-
-If your tab titles show `2.1.119` or some other Claude-Code-written title instead of our `* <topic>`, two settings can force VS Code and Claude Code out of the way (rarely needed in current Claude Code 2.1.119, but worth trying):
-
-- Add to `~/.claude/settings.json` env: `"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"` — stops Claude Code from writing competing OSC titles.
-- Add to VS Code's user `settings.json`: `"terminal.integrated.tabs.title": "${sequence}"` — forces VS Code to display whatever the terminal sets via OSC instead of the default `${process}` template.
-
-## Customize
-
-Open `tab-state.py` and edit:
-
-| Constant | Default | Meaning |
-|---|---|---|
-| `TITLE_MAX` | 28 | max title length before truncation with `…` |
-| `PROMPT_SLICE` | 500 | bytes of the prompt body the script will scan |
-| `MARKER_WORKING` | `*` | character emitted while Claude is working |
-| `MARKER_IDLE` | `·` | character emitted when Claude is idle |
 
 ## Uninstall
 
