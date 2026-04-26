@@ -8,9 +8,6 @@ When you have multiple `claude` sessions running in different VS Code terminal t
 
 - Tab title = the topic of your last substantive prompt.
 - **Sticky** across short follow-ups: any reply under `MIN_TOPIC_LEN` chars (default 10) keeps the previous topic in place — `ok`, `do it`, `fix it`, `next` all leave the topic alone. Anything longer replaces it. Length-only check, no English-specific word list.
-- **No emoji prefix** — VS Code's native `·`/`✱` tab indicator handles the busy/idle visual.
-- **No flicker on tool calls.** `PreToolUse` is intentionally not hooked.
-- **No LLM call.** Pure heuristic from your prompt text. Zero token cost.
 
 ## Requirements
 
@@ -98,8 +95,8 @@ Existing `claude` sessions don't pick up new hooks until restart.
 
 - **macOS only** as written. The `find_terminal_device()` function shells out to `ps`; Linux'd want `/proc/<pid>/stat`.
 - **VS Code integrated terminal** is the assumed display. iTerm2 / Terminal.app honor OSC titles too but the busy/idle indicator (`·`/`✱`) is VS Code-specific.
-- **No semantic compression.** The title is the literal first line of your last substantive prompt, truncated. *"Help me refactor the entire authentication flow including login"* shows as `Help me refactor the ent…`. If you want 2–4 word topics, you need an LLM in the loop — see [Future work](#future-work).
-- **Length-based continuation detection is imperfect.** A medium-length follow-up like `ok do the remaining stuff now` (29 chars) overwrites the topic, even though it's clearly a continuation in context. The fix would be an LLM-derived topic (see [Future work](#future-work)); the length-only check is the simplest thing that doesn't require a hardcoded English ack list.
+- **No semantic compression.** The title is the literal first line of your last substantive prompt, truncated. *"Help me refactor the entire authentication flow including login"* shows as `Help me refactor the ent…`. Real 2–4 word topics would require an LLM in the loop.
+- **Length-based continuation detection is imperfect.** A medium-length follow-up like `ok do the remaining stuff now` (29 chars) overwrites the topic, even though it's clearly a continuation in context.
 - **Existing hooks aren't clobbered.** If you have `ccnotify` or similar already on `UserPromptSubmit`/`SessionStart`, our hook runs alongside, not in place of it — but only because you append rather than replace during step 2.
 
 ## Customize
@@ -111,12 +108,6 @@ Open `~/.claude/hooks/tab-state.py` and edit:
 | `TITLE_MAX` | 26 | max display length before truncation with `…` |
 | `PROMPT_SLICE` | 500 | bytes of prompt body the script will scan |
 | `MIN_TOPIC_LEN` | 10 | length below which a prompt is a continuation (does not overwrite the topic) |
-
-## Future work
-
-- **LLM-derived topic** (PRs welcome): swap the heuristic for a fire-and-forget background call to a small model (e.g. `gpt-4o-mini`, Claude Haiku) that synthesizes a 2–4 word topic from the prompt. The hook could write the literal topic immediately, then refine in the background once the LLM returns.
-- **Linux support**: replace `ps -o tty=,ppid=` with `/proc/<pid>/stat` field 7 (controlling tty as a device number) and resolve via `/dev`.
-- **Manual override**: a `tab-state.py --topic "Refactor auth"` mode so Claude (or you, via a slash command) can set the topic explicitly.
 
 ## Uninstall
 
