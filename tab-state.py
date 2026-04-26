@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 """tab-state.py — VS Code terminal tab title for Claude Code.
 
-Title = the topic the user is discussing, derived from their own messages
-only (Claude's responses are ignored). The topic is sticky across short
-prompts ("ok", "do it", "fix it") so a quick follow-up doesn't clobber it;
-prompts at or above MIN_TOPIC_LEN replace it. Length-only — no English-
-specific ack/continuation word list.
+Title format: "<marker> <topic>" where:
+  marker = "*" while Claude is working, "·" when idle.
+  topic  = first substantive prompt of the session (sticky after that),
+           or whatever has been set via --topic.
 
-Updates only on UserPromptSubmit. SessionStart writes a project-name
-fallback so the tab shows something predictable before the first message.
+Modes:
+  tab-state.py working
+    UserPromptSubmit hook. If no topic is set yet, seeds it from the
+    first non-empty line of the prompt. Writes "* <topic>".
 
-Per-session state at /tmp/claude-tab-<session_id>:
-  topic       — current sticky topic
-  last_title  — last title we wrote (for dedup)
+  tab-state.py idle
+    Stop / SessionStart hook. Writes "· <topic>". Falls back to the
+    cwd basename when no topic is known yet.
 
-The prompt body is truncated to PROMPT_SLICE bytes before any processing
-(big paste-ins or multi-page prompts don't need to be fully scanned).
+  tab-state.py --topic "Refactor auth"
+    Sets the topic explicitly for the current session and rewrites the
+    title with the current marker. Use this from Claude itself (via a
+    Bash call in your first response) to write a synthesized topic
+    instead of the literal first-prompt line.
 
-Output: OSC title-change escape written directly to the parent claude
-process's controlling tty. Hooks have no /dev/tty of their own (Claude
-Code isolates them), so we walk the process tree to find a writable pty.
-Stdout stays silent. Always exits 0.
+State per session at /tmp/claude-tab-<session_id>:
+  topic        — sticky topic
+  marker_state — "working" or "idle" — drives the prefix character
+  last_title   — last full title we wrote (dedup)
+
+Output: OSC title escape written directly to the parent claude
+process's controlling pty (hooks have no /dev/tty of their own). Stdout
+stays silent. Always exits 0.
 """
 
 import json
@@ -30,11 +38,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-TITLE_MAX = 26
+TITLE_MAX = 28
 PROMPT_SLICE = 500
-MIN_TOPIC_LEN = 10  # prompts shorter than this are treated as continuations
-                    # and don't overwrite the topic. Length-only — no
-                    # English-specific ack/continuation word list.
+MARKER_WORKING = "*"
+MARKER_IDLE = "·"
 
 
 def state_path(session_id: str) -> Path:
@@ -56,13 +63,14 @@ def save_state(p: Path, s: dict) -> None:
         pass
 
 
-def trim(text: str) -> str:
+def trim_topic(text: str) -> str:
     if not text:
         return ""
     cleaned = re.sub(r"[\x00-\x1f\x7f]", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if len(cleaned) > TITLE_MAX:
-        cleaned = cleaned[: TITLE_MAX - 1].rstrip() + "…"
+    body_max = TITLE_MAX - 2  # reserve "* "
+    if len(cleaned) > body_max:
+        cleaned = cleaned[: body_max - 1].rstrip() + "…"
     return cleaned
 
 
@@ -77,16 +85,19 @@ def first_line(text: str) -> str:
     return next((L.strip() for L in s.splitlines() if L.strip()), "")
 
 
-def is_continuation(prompt: str) -> bool:
-    return len(prompt.strip()) < MIN_TOPIC_LEN
-
-
 def fallback(payload: dict) -> str:
     cwd = payload.get("cwd") or os.getcwd()
     return Path(cwd).name or "Claude"
 
 
 def find_terminal_device() -> str:
+    """Locate a writable tty for the parent claude pty.
+
+    Hooks have no controlling tty (Claude Code isolates them so hook
+    stdout/stderr don't bleed into the conversation), so /dev/tty
+    typically fails. Walk the process tree until we find a process
+    whose tty exists and is writable.
+    """
     try:
         with open("/dev/tty", "w") as f:
             pass
@@ -128,8 +139,56 @@ def write_title(title: str) -> None:
         pass
 
 
+def find_session_id_from_process() -> str:
+    """In --topic mode there's no stdin payload, so we have to find the
+    session_id another way. Walk up the process tree; for each pid look
+    for ~/.claude/sessions/<pid>.json which has the sessionId UUID."""
+    pid = os.getppid()
+    sessions_dir = Path.home() / ".claude" / "sessions"
+    for _ in range(10):
+        if pid <= 1:
+            break
+        sf = sessions_dir / f"{pid}.json"
+        if sf.exists():
+            try:
+                data = json.loads(sf.read_text())
+                sid = data.get("sessionId")
+                if sid:
+                    return sid
+            except Exception:
+                pass
+        try:
+            r = subprocess.run(
+                ["ps", "-o", "ppid=", "-p", str(pid)],
+                capture_output=True, text=True, timeout=1,
+            )
+        except Exception:
+            break
+        parent = r.stdout.strip()
+        pid = int(parent) if parent.isdigit() else 0
+    return ""
+
+
+def parse_args(argv):
+    """Returns (mode, topic_override)."""
+    args = list(argv[1:])
+    topic = None
+    mode = "idle"
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--topic" and i + 1 < len(args):
+            topic = args[i + 1]
+            i += 2
+            continue
+        if a in ("working", "idle"):
+            mode = a
+        i += 1
+    return mode, topic
+
+
 def main() -> int:
-    state = sys.argv[1] if len(sys.argv) > 1 else "idle"
+    mode, topic_override = parse_args(sys.argv)
 
     try:
         raw = sys.stdin.read()
@@ -137,24 +196,41 @@ def main() -> int:
     except Exception:
         payload = {}
 
-    session_id = str(payload.get("session_id") or "default")
+    session_id = (
+        str(payload.get("session_id") or "")
+        or find_session_id_from_process()
+        or "default"
+    )
     sp = state_path(session_id)
     persisted = load_state(sp)
-    topic = persisted.get("topic") or ""
 
-    if state == "working":
+    topic = persisted.get("topic") or ""
+    marker_state = persisted.get("marker_state") or "idle"
+
+    if topic_override is not None:
+        topic = topic_override
+    elif mode == "working" and not topic:
+        # First UserPromptSubmit: seed topic from the first line of the prompt.
         prompt = (payload.get("prompt") or "")[:PROMPT_SLICE]
         candidate = first_line(prompt)
         if candidate:
-            if not topic or not is_continuation(prompt):
-                topic = candidate
+            topic = candidate
 
-    title = trim(topic) or trim(fallback(payload))
+    if mode in ("working", "idle"):
+        marker_state = mode
+
+    if not topic:
+        topic = fallback(payload)
+
+    marker = MARKER_WORKING if marker_state == "working" else MARKER_IDLE
+    body = trim_topic(topic)
+    title = f"{marker} {body}".strip()
 
     if persisted.get("last_title") != title:
         write_title(title)
         persisted["last_title"] = title
     persisted["topic"] = topic
+    persisted["marker_state"] = marker_state
     save_state(sp, persisted)
     return 0
 
