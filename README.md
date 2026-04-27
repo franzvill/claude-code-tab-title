@@ -22,9 +22,6 @@ The topic is set once, from the first prompt of the session, and stays sticky un
 · Refactor auth flow      ← Claude finishes → idle again
 ```
 
-<img width="353" height="117" alt="image" src="https://github.com/user-attachments/assets/327604f1-e6d6-4ee3-bf0d-65c056ca7349" />
-
-
 **Four parallel sessions** (each line is a tab/window):
 
 ```
@@ -33,6 +30,8 @@ The topic is set once, from the first prompt of the session, and stays sticky un
 * Migration runner        ← Claude working
 · Tab title hook          ← idle
 ```
+
+<img width="353" height="117" alt="image" src="https://github.com/user-attachments/assets/327604f1-e6d6-4ee3-bf0d-65c056ca7349" />
 
 ## Install
 
