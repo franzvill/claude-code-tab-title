@@ -33,6 +33,7 @@ stays silent. Always exits 0.
 
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -40,6 +41,7 @@ from pathlib import Path
 
 TITLE_MAX = 28
 PROMPT_SLICE = 500
+MAX_PROCESS_HOPS = 10
 MARKER_WORKING = "*"
 MARKER_IDLE = "·"
 
@@ -90,22 +92,65 @@ def fallback(payload: dict) -> str:
     return Path(cwd).name or "Claude"
 
 
-def find_terminal_device() -> str:
-    """Locate a writable tty for the parent claude pty.
-
-    Hooks have no controlling tty (Claude Code isolates them so hook
-    stdout/stderr don't bleed into the conversation), so /dev/tty
-    typically fails. Walk the process tree until we find a process
-    whose tty exists and is writable.
-    """
+def parse_linux_proc_stat(stat_text: str) -> tuple[int, int] | None:
+    """Return (ppid, tty_nr) from Linux /proc/<pid>/stat text."""
+    end_comm = stat_text.rfind(")")
+    if end_comm == -1:
+        return None
+    fields = stat_text[end_comm + 2 :].split()
+    # Remaining fields start at field 3: state, ppid, pgrp, session, tty_nr.
+    if len(fields) < 5:
+        return None
     try:
-        with open("/dev/tty", "w") as f:
-            pass
-        return "/dev/tty"
+        return int(fields[1]), int(fields[4])
+    except ValueError:
+        return None
+
+
+def linux_proc_info(pid: int) -> tuple[int, int] | None:
+    try:
+        return parse_linux_proc_stat(Path(f"/proc/{pid}/stat").read_text())
     except Exception:
-        pass
-    pid = os.getppid()
-    for _ in range(10):
+        return None
+
+
+def linux_tty_path(tty_nr: int, dev_root: Path = Path("/dev")) -> str:
+    if tty_nr <= 0:
+        return ""
+
+    candidates = [dev_root / "pts"]
+    candidates.extend(dev_root.glob("tty*"))
+
+    for candidate in candidates:
+        paths = candidate.iterdir() if candidate.is_dir() else [candidate]
+        for path in paths:
+            try:
+                if os.stat(path).st_rdev == tty_nr and os.access(path, os.W_OK):
+                    return str(path)
+            except Exception:
+                continue
+    return ""
+
+
+def find_terminal_device_linux(pid: int | None = None) -> str:
+    pid = os.getppid() if pid is None else pid
+    for _ in range(MAX_PROCESS_HOPS):
+        if pid <= 1:
+            break
+        proc_info = linux_proc_info(pid)
+        if not proc_info:
+            break
+        ppid, tty_nr = proc_info
+        path = linux_tty_path(tty_nr)
+        if path:
+            return path
+        pid = ppid
+    return ""
+
+
+def find_terminal_device_ps(pid: int | None = None) -> str:
+    pid = os.getppid() if pid is None else pid
+    for _ in range(MAX_PROCESS_HOPS):
         if pid <= 1:
             break
         try:
@@ -125,6 +170,25 @@ def find_terminal_device() -> str:
                 return path
         pid = int(ppid_str) if ppid_str.isdigit() else 0
     return ""
+
+
+def find_terminal_device() -> str:
+    """Locate a writable tty for the parent claude pty.
+
+    Hooks have no controlling tty (Claude Code isolates them so hook
+    stdout/stderr don't bleed into the conversation), so /dev/tty
+    typically fails. Walk the process tree until we find a process
+    whose tty exists and is writable.
+    """
+    try:
+        with open("/dev/tty", "w") as f:
+            pass
+        return "/dev/tty"
+    except Exception:
+        pass
+    if platform.system() == "Linux":
+        return find_terminal_device_linux()
+    return find_terminal_device_ps()
 
 
 def write_title(title: str) -> None:
