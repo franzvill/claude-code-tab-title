@@ -34,6 +34,7 @@ stays silent. Always exits 0.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -127,7 +128,42 @@ def find_terminal_device() -> str:
     return ""
 
 
+def write_title_konsole_dbus(title: str) -> bool:
+    """Set the Konsole tab title via DBus, returning True on attempt.
+
+    Konsole exports KONSOLE_DBUS_SERVICE and KONSOLE_DBUS_SESSION to
+    its child processes (they propagate through Claude → hooks), so we
+    can target the right tab without walking the process tree. We use
+    DBus instead of OSC because Konsole silently ignores OSC \\033]0;...
+    sequences emitted by non-foreground subprocesses on the same pty
+    — verified empirically by writing OSC directly to claude's
+    /dev/pts/N from a hook subprocess and seeing no title change.
+    """
+    service = os.environ.get("KONSOLE_DBUS_SERVICE")
+    session = os.environ.get("KONSOLE_DBUS_SESSION")
+    if not service or not session:
+        return False
+    qdbus = (
+        shutil.which("qdbus6")
+        or shutil.which("qdbus-qt6")
+        or shutil.which("qdbus")
+    )
+    if not qdbus:
+        return False
+    try:
+        subprocess.run(
+            [qdbus, service, session,
+             "org.kde.konsole.Session.setTitle", "1", title],
+            capture_output=True, timeout=2,
+        )
+    except Exception:
+        return False
+    return True
+
+
 def write_title(title: str) -> None:
+    if write_title_konsole_dbus(title):
+        return
     path = find_terminal_device()
     if not path:
         return
