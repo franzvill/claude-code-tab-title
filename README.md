@@ -87,13 +87,13 @@ Restart any running `claude` sessions for the new hooks to load.
 
 **On `Stop`** — rewrites the title with the `·` marker, keeping the existing topic.
 
-**Why we walk the process tree to write OSC:** Claude Code spawns hooks with no controlling tty of their own (so hook stdout/stderr can't bleed into the conversation). Writing to `/dev/tty` from the hook silently fails. The script falls back to `ps -o tty=,ppid= -p $PPID` to find the parent claude's real pty (e.g. `/dev/ttys020`) and writes there directly, walking up to 10 hops if the parent itself has no tty.
+**Why we walk the process tree to write OSC:** Claude Code spawns hooks with no controlling tty of their own (so hook stdout/stderr can't bleed into the conversation). Writing to `/dev/tty` from the hook silently fails. The script falls back to the parent process tree to find the parent claude's real pty (for example `/dev/ttys020` on macOS or `/dev/pts/1` on Linux) and writes there directly, walking up to 10 hops if the parent itself has no tty. On Linux it reads `/proc/<pid>/stat`; elsewhere it uses `ps -o tty=,ppid= -p $PPID`.
 
 **State** is per-session at `/tmp/claude-tab-<session_id>` — JSON with `topic`, `marker_state`, and `last_title`. Dedup on `last_title` means hooks that compose an unchanged title don't re-emit OSC sequences.
 
 ## Caveats
 
-- **macOS only** as written. The tty lookup shells out to `ps`; Linux would need `/proc/<pid>/stat` (field 7 = controlling-tty device number).
+- **Tested terminal families** include VS Code's integrated terminal, iTerm2, Terminal.app, and Linux terminals that expose the controlling TTY through `/proc/<pid>/stat`.
 - **Tested in** VS Code's integrated terminal, iTerm2, and Terminal.app. Any terminal honoring standard OSC `\033]0;...\007` title sequences should work the same way.
 - **Manual tab rename will be overwritten** by the next `UserPromptSubmit` or `Stop`. Disable the hook entries if you'd rather rename manually.
 - **Existing hooks aren't clobbered** as long as you append rather than replace the JSON (manual install) or use the plugin (which adds hooks alongside any user-defined ones).
